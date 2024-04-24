@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 import os
 from email.mime.base import MIMEBase
 from email import encoders
+from matplotlib.backends.backend_pdf import PdfPages
+
+from matplotlib import pyplot as plt
 
 # Load environment variables from .env file
 load_dotenv()
@@ -28,6 +31,10 @@ class MyHttpRequestHandler(http.server.SimpleHTTPRequestHandler):
         # print("Queryparams:",query_params)
         command = f"adb connect {ip}:5555" 
         try:
+            self.send_response(200)
+            self.send_header('Content-type','text/plain')
+            self.end_headers()
+            self.wfile.write(bytes("Processing device data..\nMail will be sent to your device soon", "utf8"))
             # Run the command in the shell
             result = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)        
             # Print the command output
@@ -43,13 +50,35 @@ class MyHttpRequestHandler(http.server.SimpleHTTPRequestHandler):
             password = os.getenv('SENDER_PASS')
             print("Sender email:", sender_email)
             print("Receiver email:", receiver_email)
+
+            toprun = subprocess.run("top -n 1 -b", shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)        
+            optop = toprun.stdout
+            processes = optop.split("\n")
+            onlyprocesses = processes[7:len(processes)-1]
+            print(onlyprocesses)
+            proclist = []
+            for processinfo in onlyprocesses:
+                processinfo = processinfo.split()
+                proclist.append(processinfo)
+            # print(len(proclist[0]))
+            headers = ["Process ID", "Owner User", "Priority", "Nice", "Virtual", "Physical", "Shared", "State", "%CPU", "%MEM", "TIME+", "COMMAND"]
+            
+            with PdfPages('plots.pdf') as pdf:
+                fig, ax = plt.subplots(figsize=(10, 30))
+                ax.axis('off')  # Turn off axis
+                table = ax.table(cellText=proclist, colLabels=headers, loc='center', cellLoc='center', colWidths=[0.1] * len(headers))
+                table.auto_set_font_size(False)
+                table.set_fontsize(10)
+                pdf.savefig()
+                plt.close()
+
             # Create message container
             msg = MIMEMultipart()
             msg['From'] = sender_email
             msg['To'] = receiver_email
-            msg['Subject'] = 'Test email from Python'
+            msg['Subject'] = 'Your Mobile Device Stats'
             # Email body
-            body = 'This is a test email sent from Python.'
+            body = 'The device stats are as follows:\n\n'
             # Attach body to message
             msg.attach(MIMEText(body, 'plain'))
 
@@ -86,10 +115,10 @@ class MyHttpRequestHandler(http.server.SimpleHTTPRequestHandler):
             # Close the connection
             server.quit()
             print('Email sent successfully!')
-            self.send_response(200)
-            self.send_header('Content-type','text/plain')
-            self.end_headers()
-            self.wfile.write(bytes("Processing device data..\nMail will be sent to your device soon", "utf8"))
+            # self.send_response(200)
+            # self.send_header('Content-type','text/plain')
+            # self.end_headers()
+            # self.wfile.write(bytes("Processing device data..\nMail will be sent to your device soon", "utf8"))
 
         except subprocess.CalledProcessError as e:
             # If the command returns a non-zero exit status, print the error message
